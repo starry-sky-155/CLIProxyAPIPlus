@@ -38,12 +38,9 @@ const (
 	maxScannerBufferSize = 20_971_520
 
 	// Copilot API header values.
-	copilotUserAgent     = "GitHubCopilotChat/0.35.0"
-	copilotEditorVersion = "vscode/1.107.0"
-	copilotPluginVersion = "copilot-chat/0.35.0"
-	copilotIntegrationID = "vscode-chat"
-	copilotOpenAIIntent  = "conversation-panel"
-	copilotGitHubAPIVer  = "2025-04-01"
+	copilotUserAgent    = "opencode"
+	copilotOpenAIIntent = "conversation-edits"
+	copilotGitHubAPIVer = "2025-04-01"
 
 	copilotQuotaCacheTTL = 1 * time.Minute
 	githubUserQuotaURL   = "https://api.github.com/copilot_internal/user"
@@ -560,10 +557,7 @@ func (e *GitHubCopilotExecutor) applyHeaders(r *http.Request, apiToken string, b
 	r.Header.Set("Authorization", "Bearer "+apiToken)
 	r.Header.Set("Accept", "application/json")
 	r.Header.Set("User-Agent", copilotUserAgent)
-	r.Header.Set("Editor-Version", copilotEditorVersion)
-	r.Header.Set("Editor-Plugin-Version", copilotPluginVersion)
 	r.Header.Set("Openai-Intent", copilotOpenAIIntent)
-	r.Header.Set("Copilot-Integration-Id", copilotIntegrationID)
 	r.Header.Set("X-Github-Api-Version", copilotGitHubAPIVer)
 	r.Header.Set("X-Request-Id", uuid.NewString())
 

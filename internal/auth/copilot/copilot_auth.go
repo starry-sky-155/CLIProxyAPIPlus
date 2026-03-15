@@ -23,12 +23,8 @@ const (
 	// copilotAPIEndpoint is the base URL for making API requests.
 	copilotAPIEndpoint = "https://api.githubcopilot.com"
 
-	// Common HTTP header values for Copilot API requests.
-	copilotUserAgent     = "GithubCopilot/1.0"
-	copilotEditorVersion = "vscode/1.100.0"
-	copilotPluginVersion = "copilot/1.300.0"
-	copilotIntegrationID = "vscode-chat"
-	copilotOpenAIIntent  = "conversation-panel"
+	copilotUserAgent    = "opencode"
+	copilotOpenAIIntent = "conversation-edits"
 )
 
 // CopilotAPIToken represents the Copilot API token response.
@@ -120,8 +116,6 @@ func (c *CopilotAuth) GetCopilotAPIToken(ctx context.Context, githubAccessToken 
 	req.Header.Set("Authorization", "token "+githubAccessToken)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", copilotUserAgent)
-	req.Header.Set("Editor-Version", copilotEditorVersion)
-	req.Header.Set("Editor-Plugin-Version", copilotPluginVersion)
 	util.ApplyCustomHeaders(req, c.githubCopilotHeaders())
 
 	resp, err := c.httpClient.Do(req)
@@ -220,10 +214,7 @@ func (c *CopilotAuth) MakeAuthenticatedRequest(ctx context.Context, method, url 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", copilotUserAgent)
-	req.Header.Set("Editor-Version", copilotEditorVersion)
-	req.Header.Set("Editor-Plugin-Version", copilotPluginVersion)
 	req.Header.Set("Openai-Intent", copilotOpenAIIntent)
-	req.Header.Set("Copilot-Integration-Id", copilotIntegrationID)
 	util.ApplyCustomHeaders(req, c.githubCopilotHeaders())
 
 	return req, nil

@@ -460,6 +460,9 @@ func monthElapsedThreshold() float64 {
 }
 
 func (e *GitHubCopilotExecutor) fetchPremiumPercentRemaining(auth *cliproxyauth.Auth) (float64, bool) {
+	if auth == nil {
+		return 0, false
+	}
 	accessToken := metaStringValue(auth.Metadata, "access_token")
 	if accessToken == "" {
 		return 0, false

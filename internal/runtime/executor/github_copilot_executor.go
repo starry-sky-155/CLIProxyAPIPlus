@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	copilotauth "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/copilot"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
@@ -31,16 +30,13 @@ const (
 	githubCopilotChatPath      = "/chat/completions"
 	githubCopilotResponsesPath = "/responses"
 	githubCopilotAuthType      = "github-copilot"
-	githubCopilotTokenCacheTTL = 25 * time.Minute
-	// tokenExpiryBuffer is the time before expiry when we should refresh the token.
-	tokenExpiryBuffer = 5 * time.Minute
+
 	// maxScannerBufferSize is the maximum buffer size for SSE scanning (20MB).
 	maxScannerBufferSize = 20_971_520
 
 	// Copilot API header values.
-	copilotUserAgent    = "opencode"
+	copilotUserAgent    = "opencode/0.1.91"
 	copilotOpenAIIntent = "conversation-edits"
-	copilotGitHubAPIVer = "2025-04-01"
 
 	copilotQuotaCacheTTL = 1 * time.Minute
 	githubUserQuotaURL   = "https://api.github.com/copilot_internal/user"
@@ -50,14 +46,7 @@ const (
 type GitHubCopilotExecutor struct {
 	cfg        *config.Config
 	mu         sync.RWMutex
-	cache      map[string]*cachedAPIToken
 	quotaCache map[string]*cachedQuota
-}
-
-type cachedAPIToken struct {
-	token       string
-	apiEndpoint string
-	expiresAt   time.Time
 }
 
 type cachedQuota struct {
@@ -69,7 +58,6 @@ type cachedQuota struct {
 func NewGitHubCopilotExecutor(cfg *config.Config) *GitHubCopilotExecutor {
 	return &GitHubCopilotExecutor{
 		cfg:        cfg,
-		cache:      make(map[string]*cachedAPIToken),
 		quotaCache: make(map[string]*cachedQuota),
 	}
 }
@@ -426,18 +414,22 @@ func (e *GitHubCopilotExecutor) Refresh(ctx context.Context, auth *cliproxyauth.
 		return auth, nil
 	}
 
-	// Validate the token can still get a Copilot API token
+	// Validate the token via user info endpoint (no copilot_internal JWT exchange)
 	copilotAuth := copilotauth.NewCopilotAuth(e.cfg)
-	_, err := copilotAuth.GetCopilotAPIToken(ctx, accessToken)
-	if err != nil {
+	valid, _, err := copilotAuth.ValidateToken(ctx, accessToken)
+	if err != nil || !valid {
+		if err == nil {
+			err = fmt.Errorf("token invalid")
+		}
 		return nil, statusErr{code: http.StatusUnauthorized, msg: fmt.Sprintf("github-copilot token validation failed: %v", err)}
 	}
 
 	return auth, nil
 }
 
-// ensureAPIToken gets or refreshes the Copilot API token.
-func (e *GitHubCopilotExecutor) ensureAPIToken(ctx context.Context, auth *cliproxyauth.Auth) (string, string, error) {
+// ensureAPIToken returns the GitHub OAuth access token for direct use as Bearer token,
+// matching OpenCode's behavior of using the OAuth token directly without JWT exchange.
+func (e *GitHubCopilotExecutor) ensureAPIToken(_ context.Context, auth *cliproxyauth.Auth) (string, string, error) {
 	if auth == nil {
 		return "", "", statusErr{code: http.StatusUnauthorized, msg: "missing auth"}
 	}
@@ -448,41 +440,7 @@ func (e *GitHubCopilotExecutor) ensureAPIToken(ctx context.Context, auth *clipro
 		return "", "", statusErr{code: http.StatusUnauthorized, msg: "missing github access token"}
 	}
 
-	// Check for cached API token using thread-safe access
-	e.mu.RLock()
-	if cached, ok := e.cache[accessToken]; ok && cached.expiresAt.After(time.Now().Add(tokenExpiryBuffer)) {
-		e.mu.RUnlock()
-		return cached.token, cached.apiEndpoint, nil
-	}
-	e.mu.RUnlock()
-
-	// Get a new Copilot API token
-	copilotAuth := copilotauth.NewCopilotAuth(e.cfg)
-	apiToken, err := copilotAuth.GetCopilotAPIToken(ctx, accessToken)
-	if err != nil {
-		return "", "", statusErr{code: http.StatusUnauthorized, msg: fmt.Sprintf("failed to get copilot api token: %v", err)}
-	}
-
-	// Use endpoint from token response, fall back to default
-	apiEndpoint := githubCopilotBaseURL
-	if apiToken.Endpoints.API != "" {
-		apiEndpoint = strings.TrimRight(apiToken.Endpoints.API, "/")
-	}
-
-	// Cache the token with thread-safe access
-	expiresAt := time.Now().Add(githubCopilotTokenCacheTTL)
-	if apiToken.ExpiresAt > 0 {
-		expiresAt = time.Unix(apiToken.ExpiresAt, 0)
-	}
-	e.mu.Lock()
-	e.cache[accessToken] = &cachedAPIToken{
-		token:       apiToken.Token,
-		apiEndpoint: apiEndpoint,
-		expiresAt:   expiresAt,
-	}
-	e.mu.Unlock()
-
-	return apiToken.Token, apiEndpoint, nil
+	return accessToken, githubCopilotBaseURL, nil
 }
 
 type copilotQuotaResponse struct {
@@ -519,6 +477,7 @@ func (e *GitHubCopilotExecutor) fetchPremiumPercentRemaining(auth *cliproxyauth.
 		return 0, false
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("User-Agent", copilotUserAgent)
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
@@ -555,11 +514,8 @@ func (e *GitHubCopilotExecutor) fetchPremiumPercentRemaining(auth *cliproxyauth.
 func (e *GitHubCopilotExecutor) applyHeaders(r *http.Request, apiToken string, body []byte, auth *cliproxyauth.Auth) {
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer "+apiToken)
-	r.Header.Set("Accept", "application/json")
 	r.Header.Set("User-Agent", copilotUserAgent)
 	r.Header.Set("Openai-Intent", copilotOpenAIIntent)
-	r.Header.Set("X-Github-Api-Version", copilotGitHubAPIVer)
-	r.Header.Set("X-Request-Id", uuid.NewString())
 
 	initiator := "user"
 	role := detectLastConversationRole(body)

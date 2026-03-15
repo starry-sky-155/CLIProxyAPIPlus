@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
@@ -23,7 +21,7 @@ const (
 	// copilotAPIEndpoint is the base URL for making API requests.
 	copilotAPIEndpoint = "https://api.githubcopilot.com"
 
-	copilotUserAgent    = "opencode"
+	copilotUserAgent    = "opencode/0.1.91"
 	copilotOpenAIIntent = "conversation-edits"
 )
 
@@ -184,18 +182,12 @@ func (c *CopilotAuth) LoadAndValidateToken(ctx context.Context, storage *Copilot
 		return false, fmt.Errorf("no token available")
 	}
 
-	// Check if we can still use the GitHub token to get a Copilot API token
-	apiToken, err := c.GetCopilotAPIToken(ctx, storage.AccessToken)
+	valid, _, err := c.ValidateToken(ctx, storage.AccessToken)
 	if err != nil {
 		return false, err
 	}
 
-	// Check if the API token is expired
-	if apiToken.ExpiresAt > 0 && time.Now().Unix() >= apiToken.ExpiresAt {
-		return false, fmt.Errorf("copilot api token expired")
-	}
-
-	return true, nil
+	return valid, nil
 }
 
 // GetAPIEndpoint returns the Copilot API endpoint URL.
@@ -204,15 +196,14 @@ func (c *CopilotAuth) GetAPIEndpoint() string {
 }
 
 // MakeAuthenticatedRequest creates an authenticated HTTP request to the Copilot API.
-func (c *CopilotAuth) MakeAuthenticatedRequest(ctx context.Context, method, url string, body io.Reader, apiToken *CopilotAPIToken) (*http.Request, error) {
+func (c *CopilotAuth) MakeAuthenticatedRequest(ctx context.Context, method, url string, body io.Reader, bearerToken string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+apiToken.Token)
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", copilotUserAgent)
 	req.Header.Set("Openai-Intent", copilotOpenAIIntent)
 	util.ApplyCustomHeaders(req, c.githubCopilotHeaders())
@@ -247,33 +238,15 @@ type CopilotModelsResponse struct {
 // maxModelsResponseSize is the maximum allowed response size from the /models endpoint (2 MB).
 const maxModelsResponseSize = 2 * 1024 * 1024
 
-// allowedCopilotAPIHosts is the set of hosts that are considered safe for Copilot API requests.
-var allowedCopilotAPIHosts = map[string]bool{
-	"api.githubcopilot.com":               true,
-	"api.individual.githubcopilot.com":    true,
-	"api.business.githubcopilot.com":      true,
-	"copilot-proxy.githubusercontent.com": true,
-}
-
 // ListModels fetches the list of available models from the Copilot API.
-// It requires a valid Copilot API token (not the GitHub access token).
-func (c *CopilotAuth) ListModels(ctx context.Context, apiToken *CopilotAPIToken) ([]CopilotModelEntry, error) {
-	if apiToken == nil || apiToken.Token == "" {
-		return nil, fmt.Errorf("copilot: api token is required for listing models")
+func (c *CopilotAuth) ListModels(ctx context.Context, bearerToken string) ([]CopilotModelEntry, error) {
+	if bearerToken == "" {
+		return nil, fmt.Errorf("copilot: bearer token is required for listing models")
 	}
 
-	// Build models URL, validating the endpoint host to prevent SSRF.
 	modelsURL := copilotAPIEndpoint + "/models"
-	if ep := strings.TrimRight(apiToken.Endpoints.API, "/"); ep != "" {
-		parsed, err := url.Parse(ep)
-		if err == nil && parsed.Scheme == "https" && allowedCopilotAPIHosts[parsed.Host] {
-			modelsURL = ep + "/models"
-		} else {
-			log.Warnf("copilot: ignoring untrusted API endpoint %q, using default", ep)
-		}
-	}
 
-	req, err := c.MakeAuthenticatedRequest(ctx, http.MethodGet, modelsURL, nil, apiToken)
+	req, err := c.MakeAuthenticatedRequest(ctx, http.MethodGet, modelsURL, nil, bearerToken)
 	if err != nil {
 		return nil, fmt.Errorf("copilot: failed to create models request: %w", err)
 	}
@@ -307,15 +280,9 @@ func (c *CopilotAuth) ListModels(ctx context.Context, apiToken *CopilotAPIToken)
 	return modelsResp.Data, nil
 }
 
-// ListModelsWithGitHubToken is a convenience method that exchanges a GitHub access token
-// for a Copilot API token and then fetches the available models.
+// ListModelsWithGitHubToken fetches available models using the GitHub access token directly.
 func (c *CopilotAuth) ListModelsWithGitHubToken(ctx context.Context, githubAccessToken string) ([]CopilotModelEntry, error) {
-	apiToken, err := c.GetCopilotAPIToken(ctx, githubAccessToken)
-	if err != nil {
-		return nil, fmt.Errorf("copilot: failed to get API token for model listing: %w", err)
-	}
-
-	return c.ListModels(ctx, apiToken)
+	return c.ListModels(ctx, githubAccessToken)
 }
 
 // buildChatCompletionURL builds the URL for chat completions API.

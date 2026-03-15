@@ -320,15 +320,15 @@ func TestApplyHeaders_XInitiator_InputArrayLastFunctionCallOutput(t *testing.T) 
 	}
 }
 
-// --- Tests for x-github-api-version header (Problem M) ---
+// --- Tests for removed headers (OpenCode compatibility) ---
 
-func TestApplyHeaders_GitHubAPIVersion(t *testing.T) {
+func TestApplyHeaders_NoGitHubAPIVersion(t *testing.T) {
 	t.Parallel()
 	e := &GitHubCopilotExecutor{}
 	req, _ := http.NewRequest(http.MethodPost, "https://example.com", nil)
 	e.applyHeaders(req, "token", nil, nil)
-	if got := req.Header.Get("X-Github-Api-Version"); got != "2025-04-01" {
-		t.Fatalf("X-Github-Api-Version = %q, want 2025-04-01", got)
+	if got := req.Header.Get("X-Github-Api-Version"); got != "" {
+		t.Fatalf("X-Github-Api-Version should not be set, got %q", got)
 	}
 }
 

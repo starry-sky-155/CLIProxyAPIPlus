@@ -1,14 +1,13 @@
 package copilot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
@@ -52,17 +51,21 @@ func NewDeviceFlowClient(cfg *config.Config) *DeviceFlowClient {
 
 // RequestDeviceCode initiates the device flow by requesting a device code from GitHub.
 func (c *DeviceFlowClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeResponse, error) {
-	data := url.Values{}
-	data.Set("client_id", copilotClientID)
-	data.Set("scope", "read:user")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotDeviceCodeURL, strings.NewReader(data.Encode()))
+	jsonBody, err := json.Marshal(map[string]string{
+		"client_id": copilotClientID,
+		"scope":     "read:user",
+	})
 	if err != nil {
 		return nil, NewAuthenticationError(ErrDeviceCodeFailed, err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotDeviceCodeURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, NewAuthenticationError(ErrDeviceCodeFailed, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "opencode")
+	req.Header.Set("User-Agent", copilotUserAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -146,18 +149,22 @@ func (c *DeviceFlowClient) PollForToken(ctx context.Context, deviceCode *DeviceC
 
 // exchangeDeviceCode attempts to exchange the device code for an access token.
 func (c *DeviceFlowClient) exchangeDeviceCode(ctx context.Context, deviceCode string) (*CopilotTokenData, error) {
-	data := url.Values{}
-	data.Set("client_id", copilotClientID)
-	data.Set("device_code", deviceCode)
-	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotTokenURL, strings.NewReader(data.Encode()))
+	jsonBody, err := json.Marshal(map[string]string{
+		"client_id":  copilotClientID,
+		"device_code": deviceCode,
+		"grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+	})
 	if err != nil {
 		return nil, NewAuthenticationError(ErrTokenExchangeFailed, err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotTokenURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, NewAuthenticationError(ErrTokenExchangeFailed, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "opencode")
+	req.Header.Set("User-Agent", copilotUserAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -236,7 +243,7 @@ func (c *DeviceFlowClient) FetchUserInfo(ctx context.Context, accessToken string
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "opencode")
+	req.Header.Set("User-Agent", copilotUserAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

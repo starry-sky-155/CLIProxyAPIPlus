@@ -936,7 +936,7 @@ func (h *Handler) GetCopilotQuota(c *gin.Context) {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "CLIProxyAPIPlus")
+	req.Header.Set("User-Agent", "opencode/0.1.91")
 	req.Header.Set("Accept", "application/json")
 
 	httpClient := &http.Client{
@@ -1053,7 +1053,7 @@ func (h *Handler) enrichCopilotTokenResponse(ctx context.Context, response apiCa
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "CLIProxyAPIPlus")
+	req.Header.Set("User-Agent", "opencode/0.1.91")
 	req.Header.Set("Accept", "application/json")
 
 	httpClient := &http.Client{

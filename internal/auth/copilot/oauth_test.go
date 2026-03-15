@@ -226,7 +226,7 @@ func TestMakeAuthenticatedRequest_AppliesConfiguredHeaders(t *testing.T) {
 		},
 	})
 
-	req, err := auth.MakeAuthenticatedRequest(context.Background(), http.MethodGet, "https://api.githubcopilot.com/models", nil, &CopilotAPIToken{Token: "copilot-token"})
+	req, err := auth.MakeAuthenticatedRequest(context.Background(), http.MethodGet, "https://api.githubcopilot.com/models", nil, "copilot-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

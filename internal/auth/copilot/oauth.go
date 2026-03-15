@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	// copilotClientID is GitHub's Copilot CLI OAuth client ID.
-	copilotClientID = "Iv1.b507a08c87ecfe98"
+	// copilotClientID is the OAuth client ID used for GitHub device flow authentication.
+	// Uses OpenCode's registered GitHub OAuth App ID so the authorization page shows "OpenCode".
+	copilotClientID = "Ov23li8tweQw6odWQebz"
 	// copilotDeviceCodeURL is the endpoint for requesting device codes.
 	copilotDeviceCodeURL = "https://github.com/login/device/code"
 	// copilotTokenURL is the endpoint for exchanging device codes for tokens.
@@ -53,7 +54,7 @@ func NewDeviceFlowClient(cfg *config.Config) *DeviceFlowClient {
 func (c *DeviceFlowClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeResponse, error) {
 	data := url.Values{}
 	data.Set("client_id", copilotClientID)
-	data.Set("scope", "read:user user:email")
+	data.Set("scope", "read:user")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotDeviceCodeURL, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -61,6 +62,7 @@ func (c *DeviceFlowClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeRe
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "opencode")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -155,6 +157,7 @@ func (c *DeviceFlowClient) exchangeDeviceCode(ctx context.Context, deviceCode st
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "opencode")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -233,7 +236,7 @@ func (c *DeviceFlowClient) FetchUserInfo(ctx context.Context, accessToken string
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "CLIProxyAPI")
+	req.Header.Set("User-Agent", "opencode")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
